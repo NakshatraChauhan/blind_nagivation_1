@@ -48,7 +48,10 @@ class BlindNavController:
         try:
             self.detector.load()
             self.detector.start(camera_index=0)
-            self.status_callback("System online: GPS + Navigation + YOLO (offline CPU)")
+            if self.detector.enabled:
+                self.status_callback("System online: GPS + Navigation + YOLO (offline CPU)")
+            else:
+                self.status_callback("System online: GPS + Navigation. YOLO backend unavailable in this build.")
         except Exception:
             self.status_callback("System online: GPS + Navigation. YOLO unavailable on this device.")
 

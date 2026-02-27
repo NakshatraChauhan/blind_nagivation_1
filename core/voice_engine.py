@@ -4,8 +4,17 @@ import queue
 import threading
 from dataclasses import dataclass, field
 from itertools import count
+from typing import Optional
 
-import pyttsx3
+try:
+    from plyer import tts as plyer_tts
+except Exception:  # pragma: no cover
+    plyer_tts = None
+
+try:
+    import pyttsx3
+except Exception:  # pragma: no cover
+    pyttsx3 = None
 
 
 @dataclass(order=True)
@@ -17,17 +26,19 @@ class SpeechTask:
 
 
 class VoiceEngine:
-    """Thread-safe prioritized speech queue with navigation pause/cancel controls."""
+    """Thread-safe prioritized speech queue using Android-compatible TTS backends."""
 
     def __init__(self) -> None:
-        self.tts = pyttsx3.init()
-        self.tts.setProperty("rate", 165)
-
         self._counter = count()
         self._queue: "queue.PriorityQueue[SpeechTask]" = queue.PriorityQueue()
         self._lock = threading.Lock()
         self._route_paused = False
         self._running = True
+        self._pyttsx3_engine: Optional[object] = None
+
+        if pyttsx3 is not None and plyer_tts is None:
+            self._pyttsx3_engine = pyttsx3.init()
+            self._pyttsx3_engine.setProperty("rate", 165)
 
         self._thread = threading.Thread(target=self._speak_loop, daemon=True)
         self._thread.start()
@@ -63,15 +74,20 @@ class VoiceEngine:
     def _enqueue(self, text: str, tag: str, priority: int) -> None:
         self._queue.put(SpeechTask(priority=priority, order=next(self._counter), text=text, tag=tag))
 
+    def _speak(self, text: str) -> None:
+        if not text:
+            return
+        if plyer_tts is not None:
+            plyer_tts.speak(text)
+            return
+        if self._pyttsx3_engine is not None:
+            self._pyttsx3_engine.say(text)
+            self._pyttsx3_engine.runAndWait()
+
     def _speak_loop(self) -> None:
         while self._running:
             task = self._queue.get()
-            self.tts.say(task.text)
-            self.tts.runAndWait()
-
-            # Risk/emergency finishes; navigation can continue by policy from controller.
-            if task.tag == "alert":
-                pass
+            self._speak(task.text)
 
     def stop(self) -> None:
         self._running = False

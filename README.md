@@ -6,7 +6,7 @@ BlindNav AI is an offline assistive Android application for blind users that int
 
 ### 1) Fully offline by design
 - Routing: local OSM XML parsing with graph/A* computation.
-- Vision: local YOLOv8n TorchScript model on CPU.
+- Vision: local YOLOv8n TorchScript model on CPU when Torch backend is available.
 - Risk and guidance: on-device logic only.
 - Emergency: local SMS dispatch through Android Telephony API.
 
@@ -14,7 +14,7 @@ BlindNav AI is an offline assistive Android application for blind users that int
 - `navigation_engine.py`: route and turn instruction management, plus pause/resume state.
 - `routing_algorithm.py`: standalone A* implementation.
 - `gps_manager.py`: movement-aware GPS update throttling.
-- `obstacle_detection.py`: threaded frame capture + inference + movement tracking.
+- `obstacle_detection.py`: threaded frame capture + inference + movement tracking with safe backend fallback.
 - `risk_engine.py`: deterministic risk scoring and announcement policy.
 - `voice_engine.py`: prioritized speech queue with alert override.
 - `vibration_manager.py`: non-blocking haptic patterns.
@@ -35,7 +35,7 @@ BlindNav AI is an offline assistive Android application for blind users that int
 - Supports explicit `pause()` / `resume()` during hazards.
 
 ### Vision layer (YOLOv8n TorchScript)
-- Model loaded once per process (global cache).
+- Model loaded once per process (global cache) when Torch runtime is present.
 - 5 FPS camera loop for thermal/energy stability.
 - Distance from bounding-box height scaling.
 - Position classification: left / center / right.
@@ -131,3 +131,13 @@ buildozer android debug
 - Replace `data/sample_map.osm` with region-specific OSM extract.
 - Validate runtime permissions on first launch (`CAMERA`, `LOCATION`, `SMS`, `VIBRATE`).
 - Tune risk thresholds and distance scaling on field data for thesis experiments.
+
+
+## Buildozer failure fix (important)
+
+If Buildozer fails at `pythonforandroid.toolchain create` with requirements containing `torch` or `pyttsx3`, the root cause is usually missing/unsupported p4a recipes for those packages.
+This project now uses Android-compatible requirements (`kivy`, `plyer`, `pyjnius`, `numpy`, `opencv`) and a runtime fallback strategy:
+
+- `VoiceEngine` uses `plyer.tts` on Android (instead of `pyttsx3`).
+- `YoloObstacleDetector` disables inference gracefully if Torch/OpenCV backends are unavailable at runtime, so APK build is not blocked.
+- TorchScript model files are still packaged in `models/` for environments where Torch backend integration is provided.
