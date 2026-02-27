@@ -1,93 +1,68 @@
 # BlindNav AI – Environmental Navigation System
 
-BlindNav AI is an **offline-first Android navigation assistant** designed for blind and low-vision users. It combines OSM-based routing, real-time YOLO obstacle detection, context-aware speech, haptics, and emergency mode.
+BlindNav AI is an offline assistive Android application for blind users that integrates map-based navigation, on-device object detection, risk reasoning, haptic feedback, contextual speech, and emergency handling.
 
-## Architecture
+## Thesis-grade Architecture Decisions
 
-```text
-main.py
-└── core/
-    ├── navigation_engine.py      # OSM parser, graph builder, turn-by-turn instructions
-    ├── routing_algorithm.py      # A* shortest-path routing
-    ├── gps_manager.py            # Energy-aware GPS polling
-    ├── obstacle_detection.py     # YOLOv8n TorchScript inference at 5 FPS
-    ├── risk_engine.py            # LOW/MEDIUM/HIGH risk classifier
-    ├── voice_engine.py           # Smart speech orchestration
-    ├── vibration_manager.py      # Haptic patterns for hazards
-    └── emergency_handler.py      # Long-press emergency SMS with GPS coordinates
-```
+### 1) Fully offline by design
+- Routing: local OSM XML parsing with graph/A* computation.
+- Vision: local YOLOv8n TorchScript model on CPU.
+- Risk and guidance: on-device logic only.
+- Emergency: local SMS dispatch through Android Telephony API.
 
-## Core Features
+### 2) Separation of concerns (`core/`)
+- `navigation_engine.py`: route and turn instruction management, plus pause/resume state.
+- `routing_algorithm.py`: standalone A* implementation.
+- `gps_manager.py`: movement-aware GPS update throttling.
+- `obstacle_detection.py`: threaded frame capture + inference + movement tracking.
+- `risk_engine.py`: deterministic risk scoring and announcement policy.
+- `voice_engine.py`: prioritized speech queue with alert override.
+- `vibration_manager.py`: non-blocking haptic patterns.
+- `emergency_handler.py`: emergency SMS + voice confirmation.
 
-### 1) Offline Navigation Layer
-- Parses offline OSM XML map (`data/sample_map.osm`).
-- Builds node/edge graph for walkable ways.
-- Uses A* (Haversine edge + heuristic) for shortest route.
-- Generates turn-by-turn instructions with intersection detection.
-- Speaks route instructions as waypoints are reached.
+### 3) Thread-safe communication model
+- Detector has decoupled capture/inference threads and bounded queues.
+- Voice and vibration each run dedicated worker threads.
+- Controller accesses shared location/state with locks.
+- UI thread receives only lightweight status updates and scheduled ticks.
 
-### 2) Vision Layer (YOLOv8n TorchScript)
-- Loads a TorchScript model once using CPU-only inference.
-- Camera loop throttled to **5 FPS** for efficiency.
-- Detects obstacles and computes:
-  - Approximate distance (bounding-box scaling)
-  - Relative position (left / center / right)
-  - Movement (frame-to-frame bounding-box delta)
+## Functional Coverage
 
-### 3) Risk Classification Engine
-- Combines `distance + direction + movement + object class`.
-- Outputs:
-  - `LOW`
-  - `MEDIUM`
-  - `HIGH`
-- Announces only HIGH and relevant MEDIUM risks.
-- Avoids repetitive announcements via dedup logic.
+### Offline navigation layer
+- Parses OSM map file and builds node-edge graph.
+- Computes shortest path with A* using Haversine distance.
+- Generates turn-by-turn instructions and intersection guidance.
+- Supports explicit `pause()` / `resume()` during hazards.
 
-### 4) Context-aware Voice Guidance
-- Examples:
-  - “Obstacle ahead”
-  - “Car approaching from right”
-  - “Stairs detected ahead”
-  - “Clear path” (internally, not repeatedly spoken)
-- Risk alerts temporarily interrupt route guidance.
-- Navigation resumes automatically when path is clear.
+### Vision layer (YOLOv8n TorchScript)
+- Model loaded once per process (global cache).
+- 5 FPS camera loop for thermal/energy stability.
+- Distance from bounding-box height scaling.
+- Position classification: left / center / right.
+- Movement detection via frame differencing + box shift.
 
-### 5) Smart Haptics
-- Short vibration: minor obstacle.
-- Double vibration: moving object.
-- Long vibration: immediate hazard.
+### Risk engine
+- Combines distance, position, movement, and semantic class.
+- Output classes: `LOW`, `MEDIUM`, `HIGH`.
+- Announces only HIGH + relevant MEDIUM.
+- Enforces 3-second cooldown and duplicate suppression.
 
-### 6) Emergency Mode
-- User long-presses emergency button.
-- Sends SMS with current GPS coordinates.
-- Speaks confirmation/failure message.
+### Voice + haptics
+- Prioritized speech queue.
+- Alert speech cancels pending navigation utterances.
+- Navigation resumes after risk hold clears.
+- Vibration patterns:
+  - short: minor obstacle
+  - double: moving object
+  - long: immediate hazard
 
-## YOLO TorchScript Loading Example
+### Emergency mode
+- Long press triggers emergency flow.
+- Reads current GPS coordinates.
+- Sends SMS message.
+- Speaks confirmation/failure.
 
-```python
-from core.obstacle_detection import YoloObstacleDetector
-
-detector = YoloObstacleDetector("models/yolov8n.torchscript")
-detector.load()          # model loaded once (CPU)
-detector.start_camera(0) # threaded camera loop @5 FPS
-
-# poll detections
-detections = detector.get_latest()
-for d in detections:
-    print(d.label, d.distance_m, d.position, d.moving)
-```
-
-## Risk Classification Example
-
-```python
-from core.risk_engine import RiskEngine
-
-risk_engine = RiskEngine()
-assessment = risk_engine.classify(detection)
-print(assessment.level, assessment.message, assessment.should_announce)
-```
-
-## Project Layout
+## Project Structure
 
 ```text
 .
@@ -107,38 +82,52 @@ print(assessment.level, assessment.message, assessment.should_announce)
     └── emergency_handler.py
 ```
 
-## Build Instructions (Android APK)
+## YOLO TorchScript Loading Example
 
-### Prerequisites
-- Linux machine (recommended for Buildozer)
-- Python 3.10+
-- Buildozer + Android SDK/NDK toolchain
+```python
+from core.obstacle_detection import YoloObstacleDetector
 
-### 1. Install Buildozer
+detector = YoloObstacleDetector("models/yolov8n.torchscript", fps=5.0)
+detector.load()    # cached load: once per process
+detector.start(0)  # threaded capture + inference
+
+latest = detector.get_latest()
+for det in latest:
+    print(det.label, det.distance_m, det.position, det.moving)
+```
+
+## Risk Engine Example
+
+```python
+from core.risk_engine import RiskEngine
+
+engine = RiskEngine(cooldown_s=3.0)
+assessment = engine.classify(detection)
+print(assessment.level, assessment.message, assessment.should_announce)
+```
+
+## Android Build Instructions
+
+1. Install prerequisites:
 ```bash
 pip install buildozer cython
 sudo apt update
-sudo apt install -y git zip unzip openjdk-17-jdk python3-pip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev
+sudo apt install -y git zip unzip openjdk-17-jdk autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev cmake libffi-dev libssl-dev
 ```
 
-### 2. Add Model
-Place your exported YOLOv8n TorchScript model at:
-```text
-models/yolov8n.torchscript
-```
-
-Export example from Ultralytics:
+2. Export and place model:
 ```bash
 yolo export model=yolov8n.pt format=torchscript
+mkdir -p models
+mv yolov8n.torchscript models/
 ```
 
-### 3. Build APK
+3. Build APK:
 ```bash
 buildozer android debug
 ```
-APK output appears under `bin/`.
 
-## Notes
-- The sample map is minimal; replace with a larger local OSM extract for real deployment.
-- SMS and device vibration require Android runtime permissions.
-- If camera/model is unavailable, app still runs offline navigation with mock GPS.
+## Notes for deployment
+- Replace `data/sample_map.osm` with region-specific OSM extract.
+- Validate runtime permissions on first launch (`CAMERA`, `LOCATION`, `SMS`, `VIBRATE`).
+- Tune risk thresholds and distance scaling on field data for thesis experiments.
