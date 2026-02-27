@@ -1,0 +1,14 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<osm version="0.6" generator="BlindNav-AI">
+  <node id="1" lat="37.77490" lon="-122.41940"/>
+  <node id="2" lat="37.77500" lon="-122.41910"/>
+  <node id="3" lat="37.77515" lon="-122.41890"/>
+  <node id="4" lat="37.77525" lon="-122.41850"/>
+  <way id="101">
+    <nd ref="1"/>
+    <nd ref="2"/>
+    <nd ref="3"/>
+    <nd ref="4"/>
+    <tag k="highway" v="footway"/>
+  </way>
+</osm>
