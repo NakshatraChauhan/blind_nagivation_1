@@ -1,4 +1,4 @@
-"""Entry point for BlindNav AI."""
+"""Desktop entry point for BlindNav AI."""
 
 from __future__ import annotations
 
