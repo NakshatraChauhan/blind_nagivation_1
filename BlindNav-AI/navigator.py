@@ -23,6 +23,7 @@ from config import (
 )
 from distance_estimator import DistanceEstimator
 from risk_engine import RiskEngine
+from segmentation_engine import SeaFormerSegmenter
 from tts_engine import TTSEngine
 
 
@@ -36,11 +37,12 @@ class StatusUpdate:
 
 
 class BlindNavEngine:
-    """Runs offline object detection and emits status updates."""
+    """Runs offline detection + segmentation and emits status updates."""
 
     def __init__(self) -> None:
         self._estimator = DistanceEstimator()
         self._risk_engine = RiskEngine()
+        self._segmenter = SeaFormerSegmenter()
         self._tts_engine = TTSEngine()
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
@@ -106,14 +108,34 @@ class BlindNavEngine:
             while not self._stop_event.is_set():
                 ok, frame = cap.read()
                 if not ok or frame is None:
-                    self._emit(StatusUpdate(running=True, last_alert=last_alert, risk=last_risk, error="Camera read failed"))
+                    self._emit(
+                        StatusUpdate(
+                            running=True,
+                            last_alert=last_alert,
+                            risk=last_risk,
+                            error="Camera read failed",
+                        )
+                    )
                     time.sleep(0.05)
                     continue
 
                 try:
-                    result = model.predict(frame, conf=CONF_THRESHOLD, iou=IOU_THRESHOLD, verbose=False, device="cpu")[0]
+                    result = model.predict(
+                        frame,
+                        conf=CONF_THRESHOLD,
+                        iou=IOU_THRESHOLD,
+                        verbose=False,
+                        device="cpu",
+                    )[0]
                 except Exception as exc:
-                    self._emit(StatusUpdate(running=True, last_alert=last_alert, risk=last_risk, error=f"Inference error: {exc}"))
+                    self._emit(
+                        StatusUpdate(
+                            running=True,
+                            last_alert=last_alert,
+                            risk=last_risk,
+                            error=f"Inference error: {exc}",
+                        )
+                    )
                     continue
 
                 best: dict | None = None
@@ -133,14 +155,30 @@ class BlindNavEngine:
                     risk = self._risk_engine.classify(name, distance)
                     message = f"{name} {distance} on your {direction}"
 
-                    candidate = {"msg": message, "risk": risk.level, "prio": risk.priority, "width": width}
-                    if best is None or (candidate["prio"], candidate["width"]) > (best["prio"], best["width"]):
+                    candidate = {
+                        "msg": message,
+                        "risk": risk.level,
+                        "prio": risk.priority,
+                        "width": width,
+                    }
+                    if best is None or (candidate["prio"], candidate["width"]) > (
+                        best["prio"],
+                        best["width"],
+                    ):
                         best = candidate
 
+                seg = self._segmenter.infer(frame)
                 if best:
                     last_alert = best["msg"]
                     last_risk = best["risk"]
-                    self._tts_engine.speak(last_alert)
+                elif seg and seg.risk in {"MEDIUM", "HIGH"}:
+                    last_alert = f"path crowded on your {seg.direction}"
+                    last_risk = seg.risk
+
+                if seg and seg.risk == "HIGH" and last_risk != "HIGH":
+                    last_risk = "HIGH"
+
+                self._tts_engine.speak(last_alert)
 
                 now = time.time()
                 fps = 1.0 / max(1e-6, now - prev_t)

@@ -1,10 +1,11 @@
 # BlindNav AI – Real-Time Offline Navigation Assistant
 
-BlindNav AI is a production-oriented, fully offline navigation assistant for blind and low-vision users. It uses YOLOv8 object detection, OpenCV camera input, and offline text-to-speech alerts.
+BlindNav AI is a production-oriented, fully offline navigation assistant for blind and low-vision users. It uses YOLOv8 object detection, SeaFormer semantic segmentation, OpenCV camera input, and offline text-to-speech alerts.
 
 ## Features
 
 - Real-time object detection using **YOLOv8 (Ultralytics)**.
+- Real-time path/obstacle segmentation using **SeaFormer (ONNX Runtime)** with temporal smoothing for stable guidance.
 - Fully offline voice alerts with **pyttsx3**.
 - Desktop UI (`ui.py` / Tkinter) and Mobile UI (`mobile_app.py` / Kivy).
 - Object filtering for critical classes: `person`, `car`, `bus`, `truck`, `bicycle`, `dog`.
@@ -24,6 +25,7 @@ BlindNav-AI/
 ├── main.py                  # Desktop entrypoint
 ├── mobile_app.py            # Mobile Kivy app entrypoint
 ├── navigator.py
+├── segmentation_engine.py
 ├── ui.py
 ├── risk_engine.py
 ├── distance_estimator.py
@@ -50,6 +52,7 @@ Place model weights at:
 
 ```text
 BlindNav-AI/model/yolov8n.pt
+BlindNav-AI/model/seaformer_b0.onnx
 ```
 
 Run desktop app:
@@ -83,8 +86,9 @@ pip install -r requirements-mobile.txt
 
 ```bash
 mkdir -p model
-# Copy your offline model file here:
+# Copy your offline model files here:
 # cp /path/to/yolov8n.pt model/yolov8n.pt
+# cp /path/to/seaformer_b0.onnx model/seaformer_b0.onnx
 ```
 
 4. **Build debug APK**:
@@ -114,6 +118,7 @@ adb install -r bin/*.apk
 
 - Use `buildozer android release` for release artifacts.
 - Sign the APK/AAB before Play Store distribution.
+- Tune `SEG_TEMPORAL_ALPHA` and `SEG_BLUR_KERNEL` in `config.py` to keep segmentation as smooth as possible while preserving responsiveness.
 - Keep inference image size moderate in `config.py` for stable FPS on CPU.
 - First build can take 15–40 minutes due to Android toolchain downloads.
 
