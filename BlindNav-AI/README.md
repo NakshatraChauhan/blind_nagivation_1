@@ -1,140 +1,150 @@
-# BlindNav AI – Real-Time Offline Navigation Assistant
+# BlindNav AI – Real-Time Offline Navigation Assistant (Flask Web App)
 
-BlindNav AI is a production-ready, fully offline inference navigation assistant with a **web app** frontend that can be accessed from any browser when deployed.
+BlindNav AI is a production-ready offline inference assistant with a Flask web UI that you can open from any browser after deployment.
 
-## Core Capabilities
-
-- YOLOv8 object detection (Ultralytics).
-- SeaFormer semantic segmentation (ONNX Runtime) with temporal smoothing.
-- OpenCV camera capture and CPU inference pipeline.
-- Offline TTS alerts via pyttsx3.
-- Risk + distance + direction reasoning.
-- Browser-accessible web dashboard (FastAPI).
+## Tech Stack
+- YOLOv8 (Ultralytics) object detection
+- SeaFormer segmentation (ONNX Runtime) + smoothing
+- OpenCV webcam input
+- pyttsx3 offline TTS
+- Flask web server
 
 ## Project Structure
-
 ```text
 BlindNav-AI/
-├── web_app.py               # Web app entrypoint (FastAPI)
-├── main.py                  # Desktop entrypoint (Tkinter)
+├── web_app.py
 ├── navigator.py
 ├── segmentation_engine.py
-├── ui.py
-├── mobile_app.py
-├── risk_engine.py
 ├── distance_estimator.py
+├── risk_engine.py
 ├── tts_engine.py
 ├── config.py
 ├── requirements.txt
-├── requirements-mobile.txt
-├── buildozer.spec
 └── model/
     ├── yolov8n.pt
     └── seaformer_b0.onnx
 ```
 
-## Local Web Run (Browser)
+## Exact Steps to Run (Local)
 
-1. Create environment and install deps:
-
+1) Open terminal and go to project:
 ```bash
 cd BlindNav-AI
+```
+
+2) Create virtual environment:
+```bash
 python -m venv .venv
+```
+
+3) Activate environment:
+```bash
+# Linux / macOS
 source .venv/bin/activate
+
+# Windows (PowerShell)
+.venv\Scripts\Activate.ps1
+```
+
+4) Install dependencies:
+```bash
+pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-2. Add model files:
-
+5) Put models in `model/`:
 ```bash
 mkdir -p model
 # cp /path/to/yolov8n.pt model/yolov8n.pt
 # cp /path/to/seaformer_b0.onnx model/seaformer_b0.onnx
 ```
 
-3. Start the web server:
-
+6) Run Flask app:
 ```bash
-uvicorn web_app:app --host 0.0.0.0 --port 8000
+python web_app.py
 ```
 
-4. Open in browser:
-
+7) Open browser:
 ```text
 http://localhost:8000
 ```
 
-## Deploy So It Works From Anywhere (Exact Steps)
+8) Click **Start** in UI to begin navigation.
 
-### Option A: Deploy on a Linux VM (recommended for webcam-attached edge device)
+## Exact Steps to Deploy (Public Access from Anywhere)
 
-1. Provision Ubuntu server/edge machine with camera attached.
-2. SSH in and install runtime:
+### Option A: VM Deployment (Ubuntu)
 
+1) SSH into VM and install OS packages:
 ```bash
 sudo apt update
-sudo apt install -y python3 python3-venv python3-pip ffmpeg libgl1
+sudo apt install -y git python3 python3-venv python3-pip ffmpeg libgl1
+```
+
+2) Clone repo and move to app:
+```bash
 git clone <YOUR_REPO_URL>
 cd blind_nagivation_1/BlindNav-AI
+```
+
+3) Create/activate venv and install Python deps:
+```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -U pip
+pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-3. Add model files:
-
+4) Add model files:
 ```bash
 mkdir -p model
 # copy yolov8n.pt and seaformer_b0.onnx into model/
 ```
 
-4. Run service publicly:
-
+5) Run production server with Gunicorn:
 ```bash
-uvicorn web_app:app --host 0.0.0.0 --port 8000
+gunicorn -w 1 -b 0.0.0.0:8000 web_app:app
 ```
 
-5. Open firewall/security group for TCP `8000`.
-6. Access from any browser:
+6) Open VM firewall/security-group for TCP 8000.
 
+7) Access from any browser:
 ```text
-http://<SERVER_PUBLIC_IP>:8000
+http://<PUBLIC_IP>:8000
 ```
 
-### Option B: Deploy with Docker (cloud VM/container host)
+### Option B: Docker Deployment
 
-1. Create `Dockerfile` (example):
-
+1) Create Dockerfile:
 ```dockerfile
 FROM python:3.11-slim
 WORKDIR /app
 COPY . /app
 RUN pip install --no-cache-dir -r requirements.txt
 EXPOSE 8000
-CMD ["uvicorn", "web_app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["gunicorn", "-w", "1", "-b", "0.0.0.0:8000", "web_app:app"]
 ```
 
-2. Build and run:
-
+2) Build image:
 ```bash
 docker build -t blindnav-ai .
+```
+
+3) Run container (mount model folder):
+```bash
 docker run -p 8000:8000 -v $(pwd)/model:/app/model blindnav-ai
 ```
 
-3. Access globally via host public IP/domain:
-
+4) Open from anywhere using host IP/domain:
 ```text
 http://<HOST_OR_DOMAIN>:8000
 ```
 
-## Optional Production Hardening
-
-- Put Nginx reverse proxy + HTTPS (Let's Encrypt) in front of Uvicorn.
-- Run with process manager (`systemd`/`supervisor`).
+## Recommended Production Hardening
+- Put Nginx + HTTPS in front of Flask/Gunicorn.
+- Run as systemd service.
 - Tune `SEG_TEMPORAL_ALPHA` and `SEG_BLUR_KERNEL` in `config.py` for smoother segmentation.
-- Lower `FRAME_WIDTH/FRAME_HEIGHT` for higher FPS on CPU.
+- Lower frame size in `config.py` if CPU FPS is low.
 
-## Safety Disclaimer
-
-BlindNav AI is assistive software and does not replace cane/guide-dog/professional mobility training.
+## Safety
+BlindNav AI is assistive software and not a replacement for cane/guide-dog/professional mobility training.

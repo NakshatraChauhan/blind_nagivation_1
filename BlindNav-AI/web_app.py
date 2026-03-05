@@ -1,25 +1,19 @@
-"""FastAPI web application for BlindNav AI."""
+"""Flask web application for BlindNav AI."""
 
 from __future__ import annotations
 
+import atexit
 import threading
 from dataclasses import asdict
 
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
-from pydantic import BaseModel
+from flask import Flask, jsonify, request
 
 from navigator import BlindNavEngine, StatusUpdate
 
-app = FastAPI(title="BlindNav AI Web")
+app = Flask(__name__)
 _engine = BlindNavEngine()
 _lock = threading.Lock()
 _latest = StatusUpdate(running=False, last_alert="Stopped", risk="LOW")
-
-
-class ControlResponse(BaseModel):
-    ok: bool
-    message: str
 
 
 def _on_update(update: StatusUpdate) -> None:
@@ -31,7 +25,7 @@ def _on_update(update: StatusUpdate) -> None:
 _engine.set_update_callback(_on_update)
 
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/")
 def index() -> str:
     return """
 <!doctype html>
@@ -92,24 +86,28 @@ tick();
 """
 
 
-@app.post("/api/start", response_model=ControlResponse)
-def start() -> ControlResponse:
+@app.post("/api/start")
+def start():
     _engine.start()
-    return ControlResponse(ok=True, message="started")
+    return {"ok": True, "message": "started"}, 200
 
 
-@app.post("/api/stop", response_model=ControlResponse)
-def stop() -> ControlResponse:
+@app.post("/api/stop")
+def stop():
     _engine.stop()
-    return ControlResponse(ok=True, message="stopped")
+    return {"ok": True, "message": "stopped"}, 200
 
 
 @app.get("/api/status")
-def status() -> dict:
+def status():
     with _lock:
-        return asdict(_latest)
+        return jsonify(asdict(_latest)), 200
 
 
-@app.on_event("shutdown")
-def on_shutdown() -> None:
+@atexit.register
+def _shutdown() -> None:
     _engine.shutdown()
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8000, debug=False)
